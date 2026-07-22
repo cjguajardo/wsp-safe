@@ -130,6 +130,7 @@ Variables principales:
 | `WSP_SEXUAL_THRESHOLD` | Umbral entre 0 y 1 | `0.25` |
 | `WSP_DELETE_UNCERTAIN` | Borra resultados dudosos | `true` |
 | `WSP_DELETE_ON_ERROR` | Falla de forma cerrada | `true` |
+| `WSP_LOG_DECISIONS` | Registra recepción y decisiones sin incluir contenido | `false` |
 | `WSP_MAX_MEDIA_BYTES` | Tamaño máximo antes de borrar por seguridad | 20 MiB |
 | `WSP_WORKERS` | Clasificaciones simultáneas | `1` |
 | `CLASSIFIER_VIDEO_SAMPLES` | Fotogramas distribuidos por video | `6` |
@@ -199,6 +200,7 @@ HTTP, el mapeo de mensajes y la construcción exacta de la mutación
 - Mantén `wsp-safe-data` como volumen nombrado; no utilices rutas absolutas del equipo anfitrión.
 - Si activas copias de seguridad del volumen en Dokploy, cifra el destino donde se guardan.
 - No registres texto, descripciones ni bytes multimedia.
+- Usa `WSP_LOG_DECISIONS=true` solo para diagnóstico; no expone el contenido ni el remitente.
 - No publiques el clasificador mediante **Domains** o `ports`.
 - Revisa periódicamente **Dispositivos vinculados** en WhatsApp.
 - Pruébalo primero con un grupo controlado antes de configurarlo para el grupo real.

@@ -8,6 +8,8 @@ import (
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
+
+	"github.com/cgc/wsp-safe/internal/filter"
 )
 
 type fakePairingClient struct {
@@ -87,5 +89,32 @@ func TestConnectUnlinkedWithPhoneCode(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "ABCD-EFGH") {
 		t.Errorf("salida = %q; falta el código de vinculación", output.String())
+	}
+}
+
+func TestFormatModerationDecisionDoesNotExposeContent(t *testing.T) {
+	message := filter.Message{
+		ID:       "mensaje-123",
+		SenderID: "remitente-privado",
+		Kind:     filter.KindText,
+		Text:     "contenido privado",
+	}
+	decision := filter.Decision{
+		Delete: true,
+		Reason: filter.ReasonSexual,
+		Result: filter.Result{SexualScore: 0.91},
+	}
+
+	entry := formatModerationDecision(message, decision)
+
+	for _, expected := range []string{"mensaje-123", "text", "eliminar=true", "sexual_content", "puntuación_sexual=0.910"} {
+		if !strings.Contains(entry, expected) {
+			t.Errorf("registro = %q; falta %q", entry, expected)
+		}
+	}
+	for _, privateValue := range []string{"remitente-privado", "contenido privado"} {
+		if strings.Contains(entry, privateValue) {
+			t.Errorf("registro = %q; expone %q", entry, privateValue)
+		}
 	}
 }

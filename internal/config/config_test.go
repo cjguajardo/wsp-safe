@@ -45,6 +45,26 @@ func TestLoadWorkers(t *testing.T) {
 	}
 }
 
+func TestLoadLogDecisions(t *testing.T) {
+	values := map[string]string{
+		"WSP_TARGET_GROUP_JID": "120363000000000000@g.us",
+		"WSP_CLASSIFIER_URL":   "http://classifier:8081/v1/classify",
+		"WSP_LOG_DECISIONS":    "true",
+	}
+	config, err := Load(func(key string) string { return values[key] })
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !config.LogDecisions {
+		t.Error("LogDecisions = false, se esperaba true")
+	}
+
+	values["WSP_LOG_DECISIONS"] = "no-es-booleano"
+	if _, err := Load(func(key string) string { return values[key] }); err == nil {
+		t.Fatal("Load() error = nil, se esperaba un error para WSP_LOG_DECISIONS")
+	}
+}
+
 func TestLoadRejectsMissingOrNonGroupTarget(t *testing.T) {
 	tests := []map[string]string{
 		{"WSP_CLASSIFIER_URL": "http://localhost:8081/v1/classify"},

@@ -15,6 +15,7 @@ type Config struct {
 	SexualThreshold float64
 	DeleteUncertain bool
 	DeleteOnError   bool
+	LogDecisions    bool
 	MaxMediaBytes   uint64
 	Workers         int
 }
@@ -61,6 +62,12 @@ func Load(getenv func(string) string) (Config, error) {
 		config.DeleteOnError, err = strconv.ParseBool(raw)
 		if err != nil {
 			return Config{}, fmt.Errorf("WSP_DELETE_ON_ERROR: %w", err)
+		}
+	}
+	if raw := strings.TrimSpace(getenv("WSP_LOG_DECISIONS")); raw != "" {
+		config.LogDecisions, err = strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("WSP_LOG_DECISIONS: %w", err)
 		}
 	}
 	if raw := strings.TrimSpace(getenv("WSP_MAX_MEDIA_BYTES")); raw != "" {

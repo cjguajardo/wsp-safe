@@ -80,7 +80,15 @@ func run() error {
 		return fmt.Errorf("configure filter: %w", err)
 	}
 	mapper := waadapter.NewMapper(client, settings.MaxMediaBytes)
-	registerMessageHandler(ctx, client, mapper, service, settings.TargetGroupJID, settings.Workers)
+	registerMessageHandler(
+		ctx,
+		client,
+		mapper,
+		service,
+		settings.TargetGroupJID,
+		settings.Workers,
+		settings.LogDecisions,
+	)
 
 	if err := connect(ctx, client, strings.TrimSpace(os.Getenv("WSP_PAIR_PHONE")), os.Stdout); err != nil {
 		return err
@@ -244,12 +252,22 @@ func registerMessageHandler(
 	service messageService,
 	targetChatID string,
 	workerCount int,
+	logDecisions bool,
 ) {
 	workers := make(chan struct{}, workerCount)
 	client.AddEventHandler(func(raw any) {
 		event, ok := raw.(*events.Message)
-		if !ok || event.Info.Chat.String() != targetChatID || event.Info.IsFromMe {
+		if !ok || event.Info.Chat.String() != targetChatID {
 			return
+		}
+		if event.Info.IsFromMe {
+			if logDecisions {
+				log.Printf("mensaje propio ignorado: id=%s", event.Info.ID)
+			}
+			return
+		}
+		if logDecisions {
+			log.Printf("mensaje recibido del grupo configurado: id=%s", event.Info.ID)
 		}
 		select {
 		case workers <- struct{}{}:
@@ -268,9 +286,25 @@ func registerMessageHandler(
 				log.Printf("process WhatsApp message %s: %v", event.Info.ID, err)
 				return
 			}
+			if logDecisions {
+				log.Print(formatModerationDecision(message, decision))
+			}
 			if decision.Delete {
 				log.Printf("deleted message %s for me: %s", event.Info.ID, decision.Reason)
 			}
 		}()
 	})
+}
+
+func formatModerationDecision(message filter.Message, decision filter.Decision) string {
+	return fmt.Sprintf(
+		"decisión de moderación: id=%s tipo=%s eliminar=%t motivo=%s puntuación_sexual=%.3f puntuación_sexual_menores=%.3f dudoso=%t",
+		message.ID,
+		message.Kind,
+		decision.Delete,
+		decision.Reason,
+		decision.Result.SexualScore,
+		decision.Result.SexualMinorsScore,
+		decision.Result.Uncertain,
+	)
 }
