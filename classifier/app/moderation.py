@@ -36,7 +36,7 @@ SEXUAL_TERMS = {
 
 
 def score_detections(detections: Iterable[Mapping[str, object]]) -> float:
-    """Convert NudeNet object detections into one conservative sexual score."""
+    """Convierte las detecciones de NudeNet en una puntuación sexual conservadora."""
     score = 0.0
     for detection in detections:
         label = str(detection.get("class", "")).upper()

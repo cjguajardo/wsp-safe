@@ -1,5 +1,5 @@
-// Package filter contains the moderation policy and intentionally knows
-// nothing about WhatsApp or a specific classification provider.
+// El paquete filter contiene la política de moderación y se mantiene
+// independiente de WhatsApp y de cualquier proveedor de clasificación específico.
 package filter
 
 import (

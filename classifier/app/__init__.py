@@ -1,1 +1,1 @@
-"""Local NudeNet classifier service."""
+"""Servicio local de clasificación con NudeNet."""

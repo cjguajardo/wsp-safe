@@ -31,8 +31,8 @@ func (d *Deleter) DeleteForMe(ctx context.Context, message filter.Message) error
 	return d.sender.SendAppState(ctx, patch)
 }
 
-// BuildDeleteForMePatch creates the regular_high app-state mutation used by
-// WhatsApp linked devices for the local "Delete for me" operation.
+// BuildDeleteForMePatch crea la mutación regular_high de app-state que usan los
+// dispositivos vinculados de WhatsApp para la operación local "Eliminar para mí".
 func BuildDeleteForMePatch(message filter.Message) (appstate.PatchInfo, error) {
 	if message.ID == "" {
 		return appstate.PatchInfo{}, errors.New("message ID is required")
