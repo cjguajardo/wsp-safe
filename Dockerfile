@@ -12,7 +12,7 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=1 \
     go build -trimpath -ldflags="-s -w" -o /out/wsp-safe ./cmd/wsp-safe
 
 FROM debian:bookworm-slim

@@ -35,6 +35,10 @@ El repositorio incluye un `docker-compose.yml` preparado para **Docker Compose
 estándar** en Dokploy. No utilices Docker Stack: el despliegue necesita construir
 las dos imágenes desde sus Dockerfiles.
 
+La aplicación Go se compila para la arquitectura nativa del contenedor. Esto
+permite construirla tanto en servidores Intel (`amd64`) como en equipos ARM64
+sin configurar manualmente `GOARCH`.
+
 El Compose crea:
 
 - `wsp-safe`: cliente Go de WhatsApp, con salida a Internet.
