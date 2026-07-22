@@ -51,15 +51,26 @@ red privada de Compose.
 ### Primer despliegue: vincular y descubrir el grupo
 
 1. Crea un proyecto **Docker Compose** en Dokploy que apunte a este repositorio.
-2. Configura `WSP_MODE=list-groups` en la sección **Environment**.
-3. Realiza el despliegue y revisa los registros de `wsp-safe`.
-4. Escanea el código QR desde **WhatsApp → Dispositivos vinculados**.
+2. Configura estas variables en la sección **Environment**:
+
+```env
+WSP_MODE=list-groups
+WSP_PAIR_PHONE=56912345678
+```
+
+   Usa el número completo con código de país. Los espacios y el signo `+` son
+   opcionales.
+3. Realiza el despliegue y revisa los registros de `wsp-safe` para obtener el
+   código de vinculación de ocho caracteres.
+4. En el teléfono, abre **WhatsApp → Dispositivos vinculados → Vincular un
+   dispositivo → Vincular con número de teléfono** e introduce el código.
 5. Copia el JID que aparece junto al nombre del grupo.
-6. Cambia las variables:
+6. Cambia las variables y elimina `WSP_PAIR_PHONE`:
 
 ```env
 WSP_MODE=run
 WSP_TARGET_GROUP_JID=120363000000000000@g.us
+WSP_PAIR_PHONE=
 ```
 
 7. Vuelve a realizar el despliegue.
@@ -67,6 +78,10 @@ WSP_TARGET_GROUP_JID=120363000000000000@g.us
 El modo `list-groups` permanece activo después de imprimir los grupos para que
 Dokploy no lo reinicie en bucle. El segundo despliegue reutiliza la sesión
 guardada en el volumen.
+
+Si `WSP_PAIR_PHONE` está vacío, el servicio conserva la vinculación mediante
+código QR como alternativa. Para Dokploy se recomienda el código de teléfono,
+porque el visor de registros puede alterar el tamaño o los espacios del QR.
 
 La primera compilación del clasificador puede tardar varios minutos en el equipo
 Intel de 2012: descarga Python, ONNX Runtime, OpenCV, NudeNet y FFmpeg. Los
@@ -109,6 +124,7 @@ Variables principales:
 | --- | --- | --- |
 | `WSP_MODE` | `list-groups` para vincular o `run` para filtrar | `run` |
 | `WSP_TARGET_GROUP_JID` | Grupo exacto que será filtrado | requerido |
+| `WSP_PAIR_PHONE` | Número internacional para vincular mediante código | vacío |
 | `WSP_CLASSIFIER_URL` | Punto de conexión del clasificador | requerido |
 | `WSP_CLASSIFIER_TOKEN` | Token Bearer opcional | vacío |
 | `WSP_SEXUAL_THRESHOLD` | Umbral entre 0 y 1 | `0.25` |
@@ -179,6 +195,7 @@ HTTP, el mapeo de mensajes y la construcción exacta de la mutación
 ## Privacidad y seguridad
 
 - Nunca subas `wsp-safe.db`: contiene credenciales del dispositivo vinculado.
+- Elimina `WSP_PAIR_PHONE` después de completar la vinculación.
 - Mantén `wsp-safe-data` como volumen nombrado; no utilices rutas absolutas del equipo anfitrión.
 - Si activas copias de seguridad del volumen en Dokploy, cifra el destino donde se guardan.
 - No registres texto, descripciones ni bytes multimedia.

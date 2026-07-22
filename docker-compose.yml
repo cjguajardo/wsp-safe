@@ -43,6 +43,7 @@ services:
     environment:
       WSP_MODE: ${WSP_MODE:-run}
       WSP_TARGET_GROUP_JID: ${WSP_TARGET_GROUP_JID:-pending@g.us}
+      WSP_PAIR_PHONE: ${WSP_PAIR_PHONE:-}
       WSP_CLASSIFIER_URL: http://classifier:8081/v1/classify
       WSP_CLASSIFIER_TOKEN: ${WSP_CLASSIFIER_TOKEN:-}
       WSP_SEXUAL_THRESHOLD: ${WSP_SEXUAL_THRESHOLD:-0.25}

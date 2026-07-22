@@ -37,7 +37,13 @@ func run() error {
 	defer stop()
 	if isListGroupsMode(os.Args[1:], os.Getenv) {
 		keepAlive := strings.EqualFold(strings.TrimSpace(os.Getenv("WSP_MODE")), "list-groups")
-		return runListGroups(ctx, config.SessionDB(os.Getenv), os.Stdout, keepAlive)
+		return runListGroups(
+			ctx,
+			config.SessionDB(os.Getenv),
+			strings.TrimSpace(os.Getenv("WSP_PAIR_PHONE")),
+			os.Stdout,
+			keepAlive,
+		)
 	}
 
 	settings, err := config.Load(os.Getenv)
@@ -76,7 +82,7 @@ func run() error {
 	mapper := waadapter.NewMapper(client, settings.MaxMediaBytes)
 	registerMessageHandler(ctx, client, mapper, service, settings.TargetGroupJID, settings.Workers)
 
-	if err := connect(ctx, client); err != nil {
+	if err := connect(ctx, client, strings.TrimSpace(os.Getenv("WSP_PAIR_PHONE")), os.Stdout); err != nil {
 		return err
 	}
 	log.Printf("filter active for group %s", settings.TargetGroupJID)
@@ -85,7 +91,13 @@ func run() error {
 	return nil
 }
 
-func runListGroups(ctx context.Context, sessionDB string, output io.Writer, keepAlive bool) error {
+func runListGroups(
+	ctx context.Context,
+	sessionDB string,
+	pairPhone string,
+	output io.Writer,
+	keepAlive bool,
+) error {
 	container, err := sqlstore.New(ctx, "sqlite3", sessionDB, nil)
 	if err != nil {
 		return fmt.Errorf("open WhatsApp session: %w", err)
@@ -96,7 +108,7 @@ func runListGroups(ctx context.Context, sessionDB string, output io.Writer, keep
 		return fmt.Errorf("load WhatsApp device: %w", err)
 	}
 	client := whatsmeow.NewClient(device, nil)
-	if err := connect(ctx, client); err != nil {
+	if err := connect(ctx, client, pairPhone, output); err != nil {
 		return err
 	}
 	defer client.Disconnect()
@@ -129,14 +141,29 @@ func isListGroupsMode(arguments []string, getenv func(string) string) bool {
 	return strings.EqualFold(strings.TrimSpace(getenv("WSP_MODE")), "list-groups")
 }
 
-func connect(ctx context.Context, client *whatsmeow.Client) error {
+func connect(ctx context.Context, client *whatsmeow.Client, pairPhone string, output io.Writer) error {
 	if client.Store.ID != nil {
 		if err := client.Connect(); err != nil {
 			return fmt.Errorf("connect WhatsApp: %w", err)
 		}
 		return nil
 	}
+	if err := connectUnlinked(ctx, client, pairPhone, output); err != nil {
+		return err
+	}
+	if client.Store.ID == nil {
+		return errors.New("WhatsApp login ended before the account was linked")
+	}
+	return nil
+}
 
+type pairingClient interface {
+	GetQRChannel(context.Context) (<-chan whatsmeow.QRChannelItem, error)
+	Connect() error
+	PairPhone(context.Context, string, bool, whatsmeow.PairClientType, string) (string, error)
+}
+
+func connectUnlinked(ctx context.Context, client pairingClient, pairPhone string, output io.Writer) error {
 	qrChannel, err := client.GetQRChannel(ctx)
 	if err != nil {
 		return fmt.Errorf("start QR login: %w", err)
@@ -144,18 +171,62 @@ func connect(ctx context.Context, client *whatsmeow.Client) error {
 	if err := client.Connect(); err != nil {
 		return fmt.Errorf("connect WhatsApp for QR login: %w", err)
 	}
-	for event := range qrChannel {
-		if event.Event == "code" {
-			fmt.Println("Escaneá este QR desde WhatsApp > Dispositivos vinculados:")
-			qrterminal.GenerateHalfBlock(event.Code, qrterminal.L, os.Stdout)
-			continue
+	if pairPhone != "" {
+		firstEvent, open := <-qrChannel
+		if !open {
+			return errors.New("WhatsApp login channel closed before phone pairing started")
 		}
-		log.Printf("WhatsApp login event: %s", event.Event)
+		if firstEvent.Event != whatsmeow.QRChannelEventCode {
+			return pairingEventError(firstEvent)
+		}
+		code, err := client.PairPhone(
+			ctx,
+			pairPhone,
+			true,
+			whatsmeow.PairClientChrome,
+			"Chrome (Linux)",
+		)
+		if err != nil {
+			return fmt.Errorf("generate WhatsApp phone pairing code: %w", err)
+		}
+		fmt.Fprintln(output, "Código de vinculación de WhatsApp:", code)
+		fmt.Fprintln(output, "En el teléfono, abre WhatsApp > Dispositivos vinculados > Vincular un dispositivo > Vincular con número de teléfono.")
+		return waitForPairing(ctx, qrChannel, nil)
 	}
-	if client.Store.ID == nil {
-		return errors.New("WhatsApp login ended before the account was linked")
+	return waitForPairing(ctx, qrChannel, func(code string) {
+		fmt.Fprintln(output, "Escanea este código QR desde WhatsApp > Dispositivos vinculados:")
+		qrterminal.GenerateHalfBlock(code, qrterminal.L, output)
+	})
+}
+
+func waitForPairing(
+	ctx context.Context,
+	qrChannel <-chan whatsmeow.QRChannelItem,
+	printQR func(string),
+) error {
+	for event := range qrChannel {
+		switch event.Event {
+		case whatsmeow.QRChannelEventCode:
+			if printQR != nil {
+				printQR(event.Code)
+			}
+		case whatsmeow.QRChannelSuccess.Event:
+			return nil
+		default:
+			return pairingEventError(event)
+		}
 	}
-	return nil
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("WhatsApp login canceled: %w", err)
+	}
+	return errors.New("WhatsApp login channel closed before the account was linked")
+}
+
+func pairingEventError(event whatsmeow.QRChannelItem) error {
+	if event.Error != nil {
+		return fmt.Errorf("WhatsApp login event %s: %w", event.Event, event.Error)
+	}
+	return fmt.Errorf("WhatsApp login ended with event: %s", event.Event)
 }
 
 type messageMapper interface {
