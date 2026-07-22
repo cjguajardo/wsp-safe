@@ -19,6 +19,7 @@ const maxResponseBytes = 64 << 10
 
 type classifyRequest struct {
 	MessageID   string      `json:"message_id"`
+	SenderID    string      `json:"sender_id"`
 	Kind        filter.Kind `json:"kind"`
 	MIMEType    string      `json:"mime_type,omitempty"`
 	Text        string      `json:"text,omitempty"`
@@ -45,6 +46,7 @@ func NewHTTP(endpoint, token string, client *http.Client) (*HTTP, error) {
 func (h *HTTP) Classify(ctx context.Context, message filter.Message) (filter.Result, error) {
 	payload := classifyRequest{
 		MessageID: message.ID,
+		SenderID:  message.SenderID,
 		Kind:      message.Kind,
 		MIMEType:  message.MIMEType,
 		Text:      message.Text,

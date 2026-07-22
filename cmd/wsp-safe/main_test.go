@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/types"
 
 	"github.com/cgc/wsp-safe/internal/filter"
 )
@@ -39,32 +38,17 @@ func (client *fakePairingClient) PairPhone(
 	return client.pairCode, nil
 }
 
-func TestPrintGroups(t *testing.T) {
-	jid, err := types.ParseJID("120363000000000000@g.us")
-	if err != nil {
-		t.Fatalf("ParseJID() error = %v", err)
+func TestIsLinkMode(t *testing.T) {
+	if !isLinkMode([]string{"--link"}, func(string) string { return "" }) {
+		t.Error("CLI flag did not enable link mode")
 	}
-	var output bytes.Buffer
-	printGroups(&output, []*types.GroupInfo{{
-		JID:       jid,
-		GroupName: types.GroupName{Name: "My group"},
-	}})
-	if got := output.String(); !strings.Contains(got, "120363000000000000@g.us\tMy group") {
-		t.Errorf("output = %q", got)
-	}
-}
-
-func TestIsListGroupsMode(t *testing.T) {
-	if !isListGroupsMode([]string{"--list-groups"}, func(string) string { return "" }) {
-		t.Error("CLI flag did not enable list-groups mode")
-	}
-	if !isListGroupsMode(nil, func(key string) string {
+	if !isLinkMode(nil, func(key string) string {
 		if key == "WSP_MODE" {
-			return "list-groups"
+			return "link"
 		}
 		return ""
 	}) {
-		t.Error("WSP_MODE did not enable list-groups mode")
+		t.Error("WSP_MODE did not enable link mode")
 	}
 }
 
@@ -92,7 +76,7 @@ func TestConnectUnlinkedWithPhoneCode(t *testing.T) {
 	}
 }
 
-func TestFormatModerationDecisionDoesNotExposeContent(t *testing.T) {
+func TestFormatModerationDecisionIncludesSenderWithoutExposingContent(t *testing.T) {
 	message := filter.Message{
 		ID:       "mensaje-123",
 		SenderID: "remitente-privado",
@@ -107,12 +91,12 @@ func TestFormatModerationDecisionDoesNotExposeContent(t *testing.T) {
 
 	entry := formatModerationDecision(message, decision)
 
-	for _, expected := range []string{"mensaje-123", "text", "eliminar=true", "sexual_content", "puntuación_sexual=0.910"} {
+	for _, expected := range []string{"mensaje-123", "remitente=remitente-privado", "text", "eliminar=true", "sexual_content", "puntuación_sexual=0.910"} {
 		if !strings.Contains(entry, expected) {
 			t.Errorf("registro = %q; falta %q", entry, expected)
 		}
 	}
-	for _, privateValue := range []string{"remitente-privado", "contenido privado"} {
+	for _, privateValue := range []string{"contenido privado"} {
 		if strings.Contains(entry, privateValue) {
 			t.Errorf("registro = %q; expone %q", entry, privateValue)
 		}

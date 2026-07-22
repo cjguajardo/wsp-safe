@@ -19,7 +19,6 @@ const (
 )
 
 const (
-	ReasonIgnoredChat       = "ignored_chat"
 	ReasonIgnoredOwnMessage = "ignored_own_message"
 	ReasonUnsupported       = "unsupported_content"
 	ReasonSafe              = "safe"
@@ -54,7 +53,6 @@ type Decision struct {
 }
 
 type Config struct {
-	TargetChatID    string
 	SexualThreshold float64
 	DeleteUncertain bool
 	DeleteOnError   bool
@@ -66,6 +64,10 @@ type Classifier interface {
 
 type Deleter interface {
 	DeleteForMe(context.Context, Message) error
+}
+
+type Archiver interface {
+	Archive(context.Context, Message, Decision) error
 }
 
 type AuditEvent struct {
@@ -85,13 +87,11 @@ type Service struct {
 	config     Config
 	classifier Classifier
 	deleter    Deleter
+	archiver   Archiver
 	auditor    Auditor
 }
 
-func New(config Config, classifier Classifier, deleter Deleter, auditor Auditor) (*Service, error) {
-	if config.TargetChatID == "" {
-		return nil, errors.New("target chat ID is required")
-	}
+func New(config Config, classifier Classifier, deleter Deleter, archiver Archiver, auditor Auditor) (*Service, error) {
 	if config.SexualThreshold <= 0 || config.SexualThreshold > 1 {
 		return nil, errors.New("sexual threshold must be greater than zero and at most one")
 	}
@@ -101,32 +101,29 @@ func New(config Config, classifier Classifier, deleter Deleter, auditor Auditor)
 	if deleter == nil {
 		return nil, errors.New("deleter is required")
 	}
-	return &Service{config: config, classifier: classifier, deleter: deleter, auditor: auditor}, nil
+	return &Service{config: config, classifier: classifier, deleter: deleter, archiver: archiver, auditor: auditor}, nil
 }
 
 func (s *Service) Handle(ctx context.Context, message Message) (Decision, error) {
-	if message.ChatID != s.config.TargetChatID {
-		return Decision{Reason: ReasonIgnoredChat}, nil
-	}
 	if message.FromMe {
 		return Decision{Reason: ReasonIgnoredOwnMessage}, nil
 	}
 	if !isSupported(message.Kind) {
 		return Decision{Reason: ReasonUnsupported}, nil
 	}
+	var decision Decision
 	if message.Unavailable {
-		decision := Decision{Delete: s.config.DeleteOnError, Reason: ReasonClassifierError}
-		if decision.Delete {
-			if err := s.deleter.DeleteForMe(ctx, message); err != nil {
-				return decision, fmt.Errorf("delete unavailable message for me: %w", err)
-			}
-		}
-		return decision, nil
+		decision = Decision{Delete: s.config.DeleteOnError, Reason: ReasonClassifierError}
+	} else {
+		result, classifyErr := s.classifier.Classify(ctx, message)
+		decision = s.decide(result, classifyErr)
 	}
 
-	result, classifyErr := s.classifier.Classify(ctx, message)
-	decision := s.decide(result, classifyErr)
+	var archiveErr error
 	if decision.Delete {
+		if s.archiver != nil {
+			archiveErr = s.archiver.Archive(ctx, message, decision)
+		}
 		if err := s.deleter.DeleteForMe(ctx, message); err != nil {
 			return decision, fmt.Errorf("delete message for me: %w", err)
 		}
@@ -144,6 +141,9 @@ func (s *Service) Handle(ctx context.Context, message Message) (Decision, error)
 		if err := s.auditor.Record(ctx, event); err != nil {
 			return decision, fmt.Errorf("record moderation decision: %w", err)
 		}
+	}
+	if archiveErr != nil {
+		return decision, fmt.Errorf("archive deleted message: %w", archiveErr)
 	}
 	return decision, nil
 }

@@ -17,9 +17,9 @@ import (
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
-	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 
+	securearchive "github.com/cgc/wsp-safe/internal/archive"
 	"github.com/cgc/wsp-safe/internal/classifier"
 	"github.com/cgc/wsp-safe/internal/config"
 	"github.com/cgc/wsp-safe/internal/filter"
@@ -35,9 +35,9 @@ func main() {
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if isListGroupsMode(os.Args[1:], os.Getenv) {
-		keepAlive := strings.EqualFold(strings.TrimSpace(os.Getenv("WSP_MODE")), "list-groups")
-		return runListGroups(
+	if isLinkMode(os.Args[1:], os.Getenv) {
+		keepAlive := strings.EqualFold(strings.TrimSpace(os.Getenv("WSP_MODE")), "link")
+		return runLink(
 			ctx,
 			config.SessionDB(os.Getenv),
 			strings.TrimSpace(os.Getenv("WSP_PAIR_PHONE")),
@@ -70,12 +70,18 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("configure classifier: %w", err)
 	}
+	var archiver filter.Archiver
+	if settings.ArchiveDeleted {
+		archiver, err = securearchive.NewEncrypted(settings.ArchiveDir, settings.ArchiveKey)
+		if err != nil {
+			return fmt.Errorf("configure encrypted archive: %w", err)
+		}
+	}
 	service, err := filter.New(filter.Config{
-		TargetChatID:    settings.TargetGroupJID,
 		SexualThreshold: settings.SexualThreshold,
 		DeleteUncertain: settings.DeleteUncertain,
 		DeleteOnError:   settings.DeleteOnError,
-	}, httpClassifier, waadapter.NewDeleter(client), nil)
+	}, httpClassifier, waadapter.NewDeleter(client), archiver, nil)
 	if err != nil {
 		return fmt.Errorf("configure filter: %w", err)
 	}
@@ -85,7 +91,6 @@ func run() error {
 		client,
 		mapper,
 		service,
-		settings.TargetGroupJID,
 		settings.Workers,
 		settings.LogDecisions,
 	)
@@ -93,13 +98,13 @@ func run() error {
 	if err := connect(ctx, client, strings.TrimSpace(os.Getenv("WSP_PAIR_PHONE")), os.Stdout); err != nil {
 		return err
 	}
-	log.Printf("filter active for group %s", settings.TargetGroupJID)
+	log.Print("filtro activo para todos los mensajes entrantes")
 	<-ctx.Done()
 	client.Disconnect()
 	return nil
 }
 
-func runListGroups(
+func runLink(
 	ctx context.Context,
 	sessionDB string,
 	pairPhone string,
@@ -120,33 +125,20 @@ func runListGroups(
 		return err
 	}
 	defer client.Disconnect()
-	groups, err := client.GetJoinedGroups(ctx)
-	if err != nil {
-		return fmt.Errorf("list WhatsApp groups: %w", err)
-	}
-	printGroups(output, groups)
 	if keepAlive {
-		log.Print("discovery mode active; set WSP_MODE=run and WSP_TARGET_GROUP_JID, then redeploy")
+		log.Print("cuenta vinculada; configura WSP_MODE=run y vuelve a desplegar")
 		<-ctx.Done()
 	}
 	return nil
 }
 
-func printGroups(output io.Writer, groups []*types.GroupInfo) {
-	for _, group := range groups {
-		if group != nil {
-			fmt.Fprintf(output, "%s\t%s\n", group.JID.String(), group.Name)
-		}
-	}
-}
-
-func isListGroupsMode(arguments []string, getenv func(string) string) bool {
+func isLinkMode(arguments []string, getenv func(string) string) bool {
 	for _, argument := range arguments {
-		if argument == "--list-groups" {
+		if argument == "--link" {
 			return true
 		}
 	}
-	return strings.EqualFold(strings.TrimSpace(getenv("WSP_MODE")), "list-groups")
+	return strings.EqualFold(strings.TrimSpace(getenv("WSP_MODE")), "link")
 }
 
 func connect(ctx context.Context, client *whatsmeow.Client, pairPhone string, output io.Writer) error {
@@ -250,24 +242,23 @@ func registerMessageHandler(
 	client *whatsmeow.Client,
 	mapper messageMapper,
 	service messageService,
-	targetChatID string,
 	workerCount int,
 	logDecisions bool,
 ) {
 	workers := make(chan struct{}, workerCount)
 	client.AddEventHandler(func(raw any) {
 		event, ok := raw.(*events.Message)
-		if !ok || event.Info.Chat.String() != targetChatID {
+		if !ok {
 			return
 		}
 		if event.Info.IsFromMe {
 			if logDecisions {
-				log.Printf("mensaje propio ignorado: id=%s", event.Info.ID)
+				log.Printf("mensaje propio ignorado: id=%s remitente=%s", event.Info.ID, event.Info.Sender.String())
 			}
 			return
 		}
 		if logDecisions {
-			log.Printf("mensaje recibido del grupo configurado: id=%s", event.Info.ID)
+			log.Printf("mensaje entrante recibido: id=%s remitente=%s chat=%s", event.Info.ID, event.Info.Sender.String(), event.Info.Chat.String())
 		}
 		select {
 		case workers <- struct{}{}:
@@ -298,8 +289,9 @@ func registerMessageHandler(
 
 func formatModerationDecision(message filter.Message, decision filter.Decision) string {
 	return fmt.Sprintf(
-		"decisión de moderación: id=%s tipo=%s eliminar=%t motivo=%s puntuación_sexual=%.3f puntuación_sexual_menores=%.3f dudoso=%t",
+		"decisión de moderación: id=%s remitente=%s tipo=%s eliminar=%t motivo=%s puntuación_sexual=%.3f puntuación_sexual_menores=%.3f dudoso=%t",
 		message.ID,
+		message.SenderID,
 		message.Kind,
 		decision.Delete,
 		decision.Reason,

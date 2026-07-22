@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strconv"
@@ -8,7 +9,6 @@ import (
 )
 
 type Config struct {
-	TargetGroupJID  string
 	ClassifierURL   string
 	ClassifierToken string
 	SessionDB       string
@@ -16,30 +16,24 @@ type Config struct {
 	DeleteUncertain bool
 	DeleteOnError   bool
 	LogDecisions    bool
+	ArchiveDeleted  bool
+	ArchiveKey      []byte
+	ArchiveDir      string
 	MaxMediaBytes   uint64
 	Workers         int
 }
 
 func Load(getenv func(string) string) (Config, error) {
 	config := Config{
-		TargetGroupJID:  strings.TrimSpace(getenv("WSP_TARGET_GROUP_JID")),
 		ClassifierURL:   strings.TrimSpace(getenv("WSP_CLASSIFIER_URL")),
 		ClassifierToken: getenv("WSP_CLASSIFIER_TOKEN"),
 		SessionDB:       SessionDB(getenv),
 		SexualThreshold: 0.25,
 		DeleteUncertain: true,
 		DeleteOnError:   true,
+		ArchiveDir:      valueOr(getenv("WSP_ARCHIVE_DIR"), "/data/deleted"),
 		MaxMediaBytes:   20 << 20,
 		Workers:         1,
-	}
-	if config.TargetGroupJID == "" {
-		return Config{}, errors.New("WSP_TARGET_GROUP_JID is required")
-	}
-	if config.TargetGroupJID == "pending@g.us" {
-		return Config{}, errors.New("WSP_TARGET_GROUP_JID still has the Dokploy discovery placeholder")
-	}
-	if !strings.HasSuffix(config.TargetGroupJID, "@g.us") {
-		return Config{}, errors.New("WSP_TARGET_GROUP_JID must be a WhatsApp group JID ending in @g.us")
 	}
 	if config.ClassifierURL == "" {
 		return Config{}, errors.New("WSP_CLASSIFIER_URL is required")
@@ -68,6 +62,19 @@ func Load(getenv func(string) string) (Config, error) {
 		config.LogDecisions, err = strconv.ParseBool(raw)
 		if err != nil {
 			return Config{}, fmt.Errorf("WSP_LOG_DECISIONS: %w", err)
+		}
+	}
+	if raw := strings.TrimSpace(getenv("WSP_ARCHIVE_DELETED")); raw != "" {
+		config.ArchiveDeleted, err = strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("WSP_ARCHIVE_DELETED: %w", err)
+		}
+	}
+	if config.ArchiveDeleted {
+		rawKey := strings.TrimSpace(getenv("WSP_ARCHIVE_KEY"))
+		config.ArchiveKey, err = base64.StdEncoding.DecodeString(rawKey)
+		if err != nil || len(config.ArchiveKey) != 32 {
+			return Config{}, errors.New("WSP_ARCHIVE_KEY must be a base64-encoded 32-byte key when archiving is enabled")
 		}
 	}
 	if raw := strings.TrimSpace(getenv("WSP_MAX_MEDIA_BYTES")); raw != "" {

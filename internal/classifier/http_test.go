@@ -26,6 +26,9 @@ func TestHTTPClassifier(t *testing.T) {
 		if request.MediaBase64 == "" {
 			t.Error("media_base64 is empty")
 		}
+		if request.SenderID != "56911111111@s.whatsapp.net" {
+			t.Errorf("sender_id = %q", request.SenderID)
+		}
 		return response(http.StatusOK, `{"sexual_score":0.82,"sexual_minors_score":0.01,"uncertain":false}`), nil
 	})}
 
@@ -35,6 +38,7 @@ func TestHTTPClassifier(t *testing.T) {
 	}
 	result, err := classifier.Classify(context.Background(), filter.Message{
 		ID:       "message-id",
+		SenderID: "56911111111@s.whatsapp.net",
 		Kind:     filter.KindImage,
 		MIMEType: "image/jpeg",
 		Media:    []byte("image bytes"),

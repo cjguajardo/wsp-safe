@@ -4,8 +4,7 @@ import "testing"
 
 func TestLoad(t *testing.T) {
 	values := map[string]string{
-		"WSP_TARGET_GROUP_JID": "120363000000000000@g.us",
-		"WSP_CLASSIFIER_URL":   "http://127.0.0.1:8081/v1/classify",
+		"WSP_CLASSIFIER_URL": "http://127.0.0.1:8081/v1/classify",
 	}
 	config, err := Load(func(key string) string { return values[key] })
 	if err != nil {
@@ -27,9 +26,8 @@ func TestLoad(t *testing.T) {
 
 func TestLoadWorkers(t *testing.T) {
 	values := map[string]string{
-		"WSP_TARGET_GROUP_JID": "120363000000000000@g.us",
-		"WSP_CLASSIFIER_URL":   "http://classifier:8081/v1/classify",
-		"WSP_WORKERS":          "2",
+		"WSP_CLASSIFIER_URL": "http://classifier:8081/v1/classify",
+		"WSP_WORKERS":        "2",
 	}
 	config, err := Load(func(key string) string { return values[key] })
 	if err != nil {
@@ -47,9 +45,8 @@ func TestLoadWorkers(t *testing.T) {
 
 func TestLoadLogDecisions(t *testing.T) {
 	values := map[string]string{
-		"WSP_TARGET_GROUP_JID": "120363000000000000@g.us",
-		"WSP_CLASSIFIER_URL":   "http://classifier:8081/v1/classify",
-		"WSP_LOG_DECISIONS":    "true",
+		"WSP_CLASSIFIER_URL": "http://classifier:8081/v1/classify",
+		"WSP_LOG_DECISIONS":  "true",
 	}
 	config, err := Load(func(key string) string { return values[key] })
 	if err != nil {
@@ -65,17 +62,30 @@ func TestLoadLogDecisions(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsMissingOrNonGroupTarget(t *testing.T) {
-	tests := []map[string]string{
-		{"WSP_CLASSIFIER_URL": "http://localhost:8081/v1/classify"},
-		{"WSP_TARGET_GROUP_JID": "56911111111@s.whatsapp.net", "WSP_CLASSIFIER_URL": "http://localhost:8081/v1/classify"},
-		{"WSP_TARGET_GROUP_JID": "pending@g.us", "WSP_CLASSIFIER_URL": "http://localhost:8081/v1/classify"},
-		{"WSP_TARGET_GROUP_JID": "120363000000000000@g.us"},
+func TestLoadDoesNotRequireTargetChat(t *testing.T) {
+	values := map[string]string{"WSP_CLASSIFIER_URL": "http://localhost:8081/v1/classify"}
+	if _, err := Load(func(key string) string { return values[key] }); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestLoadArchiveDeleted(t *testing.T) {
+	values := map[string]string{
+		"WSP_CLASSIFIER_URL":  "http://localhost:8081/v1/classify",
+		"WSP_ARCHIVE_DELETED": "true",
+		"WSP_ARCHIVE_KEY":     "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+		"WSP_ARCHIVE_DIR":     "/datos/eliminados",
+	}
+	config, err := Load(func(key string) string { return values[key] })
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !config.ArchiveDeleted || config.ArchiveDir != "/datos/eliminados" || len(config.ArchiveKey) != 32 {
+		t.Errorf("configuración de archivo inesperada: %+v", config)
 	}
 
-	for _, values := range tests {
-		if _, err := Load(func(key string) string { return values[key] }); err == nil {
-			t.Errorf("Load(%v) error = nil, want validation error", values)
-		}
+	delete(values, "WSP_ARCHIVE_KEY")
+	if _, err := Load(func(key string) string { return values[key] }); err == nil {
+		t.Fatal("Load() error = nil, se esperaba clave obligatoria")
 	}
 }

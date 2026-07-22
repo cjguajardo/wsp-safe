@@ -15,6 +15,9 @@ COPY internal ./internal
 RUN CGO_ENABLED=1 \
     go build -trimpath -ldflags="-s -w" -o /out/wsp-safe ./cmd/wsp-safe
 
+RUN CGO_ENABLED=1 \
+    go build -trimpath -ldflags="-s -w" -o /out/wsp-safe-review ./cmd/wsp-safe-review
+
 FROM debian:bookworm-slim
 
 RUN apt-get update \
@@ -24,6 +27,7 @@ RUN apt-get update \
     && install -d -o wsp-safe -g wsp-safe /data
 
 COPY --from=builder /out/wsp-safe /usr/local/bin/wsp-safe
+COPY --from=builder /out/wsp-safe-review /usr/local/bin/wsp-safe-review
 
 USER wsp-safe
 WORKDIR /data

@@ -18,9 +18,11 @@ func TestServiceHandle(t *testing.T) {
 		wantReason     string
 	}{
 		{
-			name:       "ignores another group",
-			message:    Message{ID: "m1", ChatID: "other@g.us", Kind: KindImage},
-			wantReason: ReasonIgnoredChat,
+			name:           "classifies messages from any chat",
+			message:        Message{ID: "m1", ChatID: "person@s.whatsapp.net", Kind: KindImage},
+			result:         Result{SexualScore: 0.04},
+			wantClassified: true,
+			wantReason:     ReasonSafe,
 		},
 		{
 			name:       "ignores own messages",
@@ -74,11 +76,10 @@ func TestServiceHandle(t *testing.T) {
 			classifier := &fakeClassifier{result: tt.result, err: tt.classifierErr}
 			deleter := &fakeDeleter{}
 			service, err := New(Config{
-				TargetChatID:    "target@g.us",
 				SexualThreshold: 0.25,
 				DeleteUncertain: true,
 				DeleteOnError:   tt.deleteOnError,
-			}, classifier, deleter, nil)
+			}, classifier, deleter, nil, nil)
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
@@ -105,18 +106,43 @@ func TestNewRejectsInvalidConfiguration(t *testing.T) {
 		name   string
 		config Config
 	}{
-		{name: "missing target chat", config: Config{SexualThreshold: 0.25}},
-		{name: "zero threshold", config: Config{TargetChatID: "target@g.us"}},
-		{name: "threshold above one", config: Config{TargetChatID: "target@g.us", SexualThreshold: 1.01}},
+		{name: "zero threshold", config: Config{}},
+		{name: "threshold above one", config: Config{SexualThreshold: 1.01}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := New(tt.config, &fakeClassifier{}, &fakeDeleter{}, nil)
+			_, err := New(tt.config, &fakeClassifier{}, &fakeDeleter{}, nil, nil)
 			if err == nil {
 				t.Fatal("New() error = nil, want validation error")
 			}
 		})
+	}
+}
+
+func TestServiceArchivesDeletedContentBeforeDeleting(t *testing.T) {
+	sequence := make([]string, 0, 2)
+	archiver := &fakeArchiver{sequence: &sequence}
+	deleter := &fakeDeleter{sequence: &sequence}
+	service, err := New(Config{
+		SexualThreshold: 0.25,
+		DeleteUncertain: true,
+		DeleteOnError:   true,
+	}, &fakeClassifier{result: Result{SexualScore: 0.9}}, deleter, archiver, nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	message := Message{ID: "m-archivo", ChatID: "persona@s.whatsapp.net", Kind: KindImage, Media: []byte("privado")}
+	decision, err := service.Handle(context.Background(), message)
+	if err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if !decision.Delete || len(archiver.messages) != 1 {
+		t.Fatalf("decisión = %+v, archivos = %d", decision, len(archiver.messages))
+	}
+	if got := sequence; len(got) != 2 || got[0] != "archive" || got[1] != "delete" {
+		t.Errorf("secuencia = %v", got)
 	}
 }
 
@@ -132,11 +158,28 @@ func (f *fakeClassifier) Classify(context.Context, Message) (Result, error) {
 }
 
 type fakeDeleter struct {
-	deleted []Message
-	err     error
+	deleted  []Message
+	err      error
+	sequence *[]string
 }
 
 func (f *fakeDeleter) DeleteForMe(_ context.Context, message Message) error {
+	if f.sequence != nil {
+		*f.sequence = append(*f.sequence, "delete")
+	}
 	f.deleted = append(f.deleted, message)
 	return f.err
+}
+
+type fakeArchiver struct {
+	messages []Message
+	sequence *[]string
+}
+
+func (f *fakeArchiver) Archive(_ context.Context, message Message, _ Decision) error {
+	if f.sequence != nil {
+		*f.sequence = append(*f.sequence, "archive")
+	}
+	f.messages = append(f.messages, message)
+	return nil
 }
