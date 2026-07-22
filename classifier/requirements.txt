@@ -1,0 +1,6 @@
+fastapi==0.115.6
+nudenet==3.4.2
+numpy==1.26.4
+onnxruntime==1.19.2
+opencv-python-headless==4.10.0.84
+uvicorn==0.34.0

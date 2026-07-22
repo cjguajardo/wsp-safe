@@ -1,0 +1,7 @@
+.env
+*.db
+*.db-shm
+*.db-wal
+/wsp-safe
+__pycache__/
+*.pyc

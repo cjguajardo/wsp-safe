@@ -1,0 +1,1 @@
+"""Local NudeNet classifier service."""

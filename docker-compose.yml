@@ -1,0 +1,75 @@
+services:
+  classifier:
+    build:
+      context: ./classifier
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      CLASSIFIER_TOKEN: ${WSP_CLASSIFIER_TOKEN:-}
+      CLASSIFIER_MAX_MEDIA_BYTES: ${WSP_MAX_MEDIA_BYTES:-20971520}
+      CLASSIFIER_VIDEO_SAMPLES: ${CLASSIFIER_VIDEO_SAMPLES:-6}
+    expose:
+      - "8081"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/healthz', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    cpus: ${CLASSIFIER_CPUS:-1.0}
+    mem_limit: ${CLASSIFIER_MEMORY:-1g}
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - private
+
+  wsp-safe:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      classifier:
+        condition: service_healthy
+    environment:
+      WSP_MODE: ${WSP_MODE:-run}
+      WSP_TARGET_GROUP_JID: ${WSP_TARGET_GROUP_JID:-pending@g.us}
+      WSP_CLASSIFIER_URL: http://classifier:8081/v1/classify
+      WSP_CLASSIFIER_TOKEN: ${WSP_CLASSIFIER_TOKEN:-}
+      WSP_SEXUAL_THRESHOLD: ${WSP_SEXUAL_THRESHOLD:-0.25}
+      WSP_DELETE_UNCERTAIN: ${WSP_DELETE_UNCERTAIN:-true}
+      WSP_DELETE_ON_ERROR: ${WSP_DELETE_ON_ERROR:-true}
+      WSP_MAX_MEDIA_BYTES: ${WSP_MAX_MEDIA_BYTES:-20971520}
+      WSP_WORKERS: ${WSP_WORKERS:-1}
+      WSP_SESSION_DB: file:/data/wsp-safe.db?_foreign_keys=on
+    volumes:
+      - wsp-safe-data:/data
+    cpus: ${WSP_APP_CPUS:-0.5}
+    mem_limit: ${WSP_APP_MEMORY:-256m}
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - private
+      - egress
+
+volumes:
+  wsp-safe-data:
+
+networks:
+  private:
+    internal: true
+  egress:
